@@ -1,0 +1,430 @@
+---
+title: "MBiol_Analysis_1064807"
+output: html_document
+date: "2025-04-07"
+---
+
+#Introduction
+This project aims to explore the interface between religion and attitudes towards tigers in TATR, Maharashtra, India. The below code shows the analysis conducted for the four objectives of this study:
+(1) To examine the influence of religious beliefs on tolerance toward tigers through Sacred Wildlife Value Orientations (WVOs) and attitudes toward tigers.
+(2) To explore the impact of sociodemographic factors on the strength of religious beliefs. 
+(3) To evaluate the applicability of a four-compartment WVO typology in TATR and its association with sociodemographic factors, attitudes, and tolerance toward tigers.
+(4) To analyze the influence of belief in divine protection and WVO typology on risk perception of tigers. 
+
+#Admin
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Install and Load Packages}
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("psych")  
+library(psych)
+#install.packages("lavaan")  
+library(lavaan)             
+#install.packages("semPlot", type = "source")
+library("semPlot")
+#install.packages("ggmosaic")
+#install.packages("ggplot2")
+library("ggplot2")
+library(ggpubr)
+library(ggthemes)
+library(cowplot)
+library(robustlmm)
+library(emmeans)
+library(ggplot2)
+```
+
+
+```{r Load Data} 
+#Loading in data
+file_path <- "~/Desktop/University Work/Fourth Year/Coding and Computing/Questionnaire Results - Results_Sheet_Final.csv"
+MBiol_data <- read.csv(file_path)
+head(MBiol_data)
+```
+
+```{r Age Bracket Creation}
+
+#People aged 35, roughly the median age, or below were classified as “younger”, whilst those older 35 were classified as “older” (“younger” ≤ 35< “older”)
+
+    MBiol_data <- MBiol_data %>%
+  mutate(
+    Age_Bracket = case_when(
+      Age <= 35 ~ "Younger",
+      Age>35 ~ "Older"
+    )
+  )
+    
+head(MBiol_data)
+```
+
+#Internal Reliability Test using Cronbach's Alpha
+```{r Religious Beleifs}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for Religious Belief Strength
+religious_beliefs <- MBiol_data %>%
+  select(ReligiousBeliefs1, ReligiousBeliefs2, ReligiousBeliefs3, ReligiousBeliefs4)
+alpha_religious <- psych::alpha(religious_beliefs)
+(religious_beliefs)
+print(alpha_religious)
+```
+
+```{r Sacred WVOs}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for Sacred WVO
+sacred_wvo <- MBiol_data %>%
+  select(SacredWVO1, SacredWVO2, SacredWVO3)
+alpha_sacred <- psych::alpha(sacred_wvo)
+(sacred_wvo)
+print(alpha_sacred)
+```
+
+```{r Attitudes}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for Attitudes towards tigers
+attitudes <- MBiol_data %>%
+  select(Attitudes1, Attitudes2, Attitudes3, Attitudes4, Attitudes5)
+alpha_attitudes <- psych::alpha(attitudes)
+(attitudes)
+print(alpha_attitudes)
+```
+
+```{r Mutualism Sub-Dimension Statements}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for the two sub-dimensions for Mutualism
+mutualism_alpha_pre <- MBiol_data %>%
+  select(SocialAffiliation1, SocialAffiliation2, Caring1, Caring2)
+alpha_mutualism <- psych::alpha(mutualism_alpha_pre)
+(mutualism_alpha_pre)
+print(alpha_mutualism)
+```
+
+```{r Domination Sub-Dimension Statements}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for the two sub-dimensions for Domination
+domination_alpha_pre <- MBiol_data %>%
+  select(AppropriateUse1, AppropriateUse2, Hunting1, Hunting2)
+alpha_domination <- psych::alpha(domination_alpha_pre)
+(domination_alpha_pre)
+print(alpha_domination)
+```
+
+```{r Active Risk Mitigation}
+#Calcualting Cronbach's Alpha to measure the internal reliability of items for active risk mitigation
+active_risk_mitigation <- MBiol_data %>%
+  select(Avoidable_Risk, Risk_Reduction)
+alpha_risk_mitigation <- psych::alpha(active_risk_mitigation)
+(active_risk_mitigation)
+print(alpha_risk_mitigation)
+```
+
+Based on the outputs, Sacred WVO3 was removed
+
+```{r Updating the full MBiol_data dataset}
+
+MBiol_data <- MBiol_data %>%
+  select(-SacredWVO3)
+MBiol_data
+```
+
+
+#Creating Composite Scores
+Based on the outcomes of this Cronbach's alpha analysis, composite scores (means of the items) are calculated as measures for the latent constructs. 
+
+```{r Creating composite scores}
+# Composite score for Religious Beliefs
+MBiol_data <- MBiol_data %>%
+  mutate(ReligiousBeliefs_Score = rowMeans(select(., ReligiousBeliefs1, ReligiousBeliefs2, ReligiousBeliefs3), na.rm = TRUE))
+
+# Composite score for Sacred WVO
+MBiol_data <- MBiol_data %>%
+  mutate(SacredWVO_Score = rowMeans(select(., SacredWVO1, SacredWVO2), na.rm = TRUE))
+
+# Composite score for Attitudes
+MBiol_data <- MBiol_data %>%
+  mutate(Attitudes_Score = rowMeans(select(., Attitudes1, Attitudes3, Attitudes4), na.rm = TRUE))
+
+# Composite score for Active Risk Mitigation
+MBiol_data <- MBiol_data %>%
+  mutate(Active_Risk_Mitigation_Score = rowMeans(select(., Avoidable_Risk, Risk_Reduction), na.rm = TRUE))
+
+# View the updated dataset
+head(MBiol_data)
+```
+
+#Classification Within the Four-Compartment Model
+```{r Calculation of Mutualism and Domination Scores}
+#Step 1: Calculate Mutualism and Domination Scores
+# Define column names for Mutualism and Domination belief dimensions
+mutualism_columns <- c("SocialAffiliation1", "SocialAffiliation2", "Caring1", "Caring2")
+domination_columns <- c("Hunting1", "Hunting2", "AppropriateUse1", "AppropriateUse2")
+
+# Calculate mean scores for each respondent
+MBiol_data <- MBiol_data %>%
+  mutate(
+    Mutualism_Score = rowMeans(select(., all_of(mutualism_columns)), na.rm = TRUE),
+    Domination_Score = rowMeans(select(., all_of(domination_columns)), na.rm = TRUE)
+  )
+
+head(MBiol_data)
+```
+
+```{r Classification of respondents}
+# Step 2: Classify respondents into WVO Typologies
+# Define scale midpoint for classification
+scale_midpoint <- 2.5
+
+# Add a new column for WVO Typology
+MBiol_data <- MBiol_data %>%
+  mutate(
+    WVO_Typology = case_when(
+      Domination_Score > scale_midpoint & Mutualism_Score <= scale_midpoint ~ "Traditionalist",
+      Domination_Score <= scale_midpoint & Mutualism_Score > scale_midpoint ~ "Mutualist",
+      Domination_Score > scale_midpoint & Mutualism_Score > scale_midpoint ~ "Pluralist",
+      Domination_Score <= scale_midpoint & Mutualism_Score <= scale_midpoint ~ "Distanced"
+    )
+  )
+
+head(MBiol_data)
+```
+
+#Classification of Views on Active Risk Mitigation (i.e. classified as either optimistic or pessimistic based on the composite score)
+
+```{r Active Risk Perception Bracket Creation}
+
+    MBiol_data <- MBiol_data %>%
+  mutate(
+    Optimist_Vs_Pessimist = case_when(
+      Active_Risk_Mitigation_Score <= 2 ~ "Pessimist",
+      Active_Risk_Mitigation_Score>2 ~ "Optimist"
+    )
+  )
+    
+head(MBiol_data)
+```
+
+#Structural Equation Modelling
+
+Used to test the causal relationships, both direct and indirect, for this hypothesised pathway: Religious Beliefs → Sacred WVO → Attitudes Toward Tigers → Tolerance.
+
+There are two main components to SEM: the measurement model and the structural model. The measurement model tests how well the latent constructs are measured by their respective observed indicators. Using Confirmatory Factor Analysis (CFA), the measurement model tests whether the observed variables load onto their respective latent constructs as hypothesized. The structural model then examines the relationships between latent variables. Model fit was assessed using multiple fit indices including: Root Mean Square Error of Approximation (RMSEA), Standardized Root Mean Square Residual (SRMR), Comparative Fit Index (CFI), and Non-Normed Fit Index (NNFI)/Tucker-Lewis Index (TLI).
+
+Tolerance was rescaled from a 1-5 scale to a 1-4 scale so that it was compatible with the other constructs.
+```{r Rescaling Tolerance}
+# Convert ordered factor to numeric (ensuring proper conversion)
+MBiol_data <- MBiol_data %>%
+  mutate(Tolerance_Numeric = as.numeric(as.character(Tolerance))) 
+
+# Rescale to range 1-4
+MBiol_data <- MBiol_data %>%
+  mutate(Tolerance_Rescaled = scales::rescale(Tolerance_Numeric, to = c(1, 4)))
+
+# Check rescaled values
+summary(MBiol_data$Tolerance_Rescaled)
+```
+
+```{r}
+# Load package for CFA
+library(lavaan)
+
+# Define the CFA model based on EFA results
+cfa_model <- '
+  ReligiousBeliefs =~ ReligiousBeliefs1 + ReligiousBeliefs2 + ReligiousBeliefs3 
+  SacredWVOs =~ SacredWVO1 + SacredWVO2 
+  Attitudes =~ Attitudes1  + Attitudes3 + Attitudes4 
+'
+# Fit CFA Model
+cfa_fit <- cfa(cfa_model, data = MBiol_data, estimator = "MLR") #MLR used rather than MLE because of non-normality and heteroscadisicity
+
+# Display summary with fit indices
+summary(cfa_fit, fit.measures = TRUE, standardized = TRUE)
+
+# Get goodness-of-fit statistics
+fitMeasures(cfa_fit, c("cfi", "tli", "rmsea", "srmr"))
+```
+
+```{r Fitting SEM - direct effects}
+SEM_model_refined <- '
+  # Direct Effects
+  SacredWVO_Score ~ ReligiousBeliefs_Score
+  Attitudes_Score ~ SacredWVO_Score
+  Tolerance_Rescaled ~ Attitudes_Score
+'
+
+# Fit SEM Model using Maximum Likelihood (MLR for robustness)
+fitSEM_refined <- sem(SEM_model_refined, 
+              data = MBiol_data, 
+              estimator = "MLR")
+
+# Summary with standardized estimates
+summary(fitSEM_refined, fit.measures = TRUE, standardized = TRUE)
+
+# Parameter estimates
+parameterEstimates(fitSEM_refined, standardized = TRUE)
+
+# Assessing model fit
+fitMeasures(fitSEM, c("cfi", "tli", "rmsea", "srmr"))
+```
+
+```{r Fitting SEM - indirect/mediation effects}
+# Define indirect paths in lavaan
+sem_model_refined_indirect <- '
+  SacredWVO_Score ~ a * ReligiousBeliefs_Score
+  Attitudes_Score ~ b * SacredWVO_Score
+  Tolerance_Rescaled ~ c * Attitudes_Score
+
+  # Indirect effects
+  indirect1 := a * b   # Mediation of SacredWVO_Score
+  indirect2 := a * b * c   # Full mediation to Tolerance
+'
+
+# Fit the model with bootstrapped standard errors
+fit_indirect_refined <- sem(sem_model_refined_indirect, data = MBiol_data, se = "bootstrap", bootstrap = 5000)
+
+# Summary with indirect effects
+summary(fit_indirect_refined, standardized = TRUE, ci = TRUE)
+```
+
+```{r Making SEM figure}
+semPaths(fit_indirect_refined, "std", edge.label.cex = 1.2, fade = FALSE)
+```
+
+#Sociodemographic Factors, WVO Typology, and Religious Beliefs 
+
+I used robust linear mixed-effects models (RLMMs) to examine how religious belief scores varied by gender and age bracket. Initial attempts to model religious belief scores using generalized linear mixed models (GLMMs) with Gamma distributions revealed significant overdispersion and violations of model assumptions, as indicated by DHARMa residual diagnostics. This prompted the switch to RLMMs.
+
+###Robust Linear Mixed-Effect Model for Religious Beleif Score and Sociodemographic Factors (Age and Gender)
+```{r Fitting RLMM for RBS and sociodemographic factors}
+# Fit the model
+robust_model <- rlmer(
+  ReligiousBeliefs_Score ~ Gender * Age_Bracket + (1 | Village),
+  data = MBiol_data
+)
+
+# emmeans accepting rlmer object
+class(robust_model) <- "lmerMod"
+
+# Get estimated marginal means
+emm <- emmeans(robust_model, ~ Gender * Age_Bracket)
+
+# Convert to a data frame
+emm_df <- as.data.frame(emm)
+
+```
+
+```{r Creating EMM Visualisation (Figure 12)}
+# Create the plot
+ggplot(emm_df, aes(x = Age_Bracket, y = emmean, color = Gender, group = Gender)) +
+  geom_point(position = position_dodge(width = 0.3), size = 3) +
+  geom_line(position = position_dodge(width = 0.3), linewidth = 0.8) +
+  geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE),
+                position = position_dodge(width = 0.3), width = 0.2) +
+    scale_color_manual(values = c("F" = "red", "M" = "orange")) +
+  labs(
+    y = "Estimated Religious Beliefs Score",
+    x = "Age Bracket",
+    title = "Estimated Marginal Means of Religious Beliefs Score",
+    subtitle = "With 95% Confidence Intervals",
+    color = "Gender"
+  ) +
+  geom_jitter(data = MBiol_data, aes(x = Age_Bracket, y = ReligiousBeliefs_Score, color = Gender), 
+              alpha = 0.2, width = 0.1, height = 0) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "gray40")
+  )
+```
+
+
+A linear mixed-effects model was fitted to examine whether WVO typology predicts attitudes toward tigers, with village included as a random intercept to account for clustering at the village level. The Attitudes Score was log-transformed prior to analysis to address right-skew and improve model assumptions.
+### Linear Mixed-Effect Model for Attitudes (log) and WVO Typology
+```{r Fitting LMM for Attitudes and WVO typology}
+# Step 1: Log-transform the outcome variable
+MBiol_data$log_Attitudes_Score <- log(MBiol_data$Attitudes_Score)
+
+# Step 2: Fit a linear mixed model with the transformed outcome
+library(lme4)
+
+log_attitudes_model <- lmer(
+  log_Attitudes_Score ~ WVO_Typology + (1 | Village),
+  data = MBiol_data
+)
+
+# Step 3: Check model summary
+summary(log_attitudes_model)
+```
+
+### Linear Mixed-Effect Model for WVO typology and Religious Beliefs
+```{r Fitting multinomial model for WVO typology and Religious Beliefs}
+multinom_model <- multinom(WVO_Typology ~ ReligiousBeliefs_Score, data = MBiol_data)
+
+# Create a sequence of ReligiousBeliefs_Score values for prediction
+new_data <- data.frame(ReligiousBeliefs_Score = seq(min(MBiol_data$ReligiousBeliefs_Score),
+                                                     max(MBiol_data$ReligiousBeliefs_Score),
+                                                     length.out = 100))
+
+# Predict probabilities
+predicted_probs <- predict(multinom_model, newdata = new_data, type = "probs")
+
+
+# Convert predictions into long format for ggplot
+predicted_long <- cbind(new_data, as.data.frame(predicted_probs)) %>%
+  pivot_longer(cols = -ReligiousBeliefs_Score, names_to = "WVO_Typology", values_to = "Probability")
+```
+
+```{r Plotting probabilities plot}
+# Plot
+ggplot(predicted_long, aes(x = ReligiousBeliefs_Score, y = Probability, color = WVO_Typology)) +
+  geom_line(size = 1.2) +
+  labs(title = "Predicted Probability of WVO Typology by Religious Belief Score",
+       x = "Religious Belief Score",
+       y = "Predicted Probability",
+       color = "WVO Typology") +
+  theme_minimal()
+```
+
+
+###Fisher's Exact Tests
+
+
+
+```{r Fisher's Exact test for Gender vs WVO typology}
+# Create a frequency table of Gender vs. WVO_Typology
+gender_wvo_table <- table(MBiol_data$Gender, MBiol_data$WVO_Typology)
+
+# View the contingency table
+print(gender_wvo_table)
+
+# Run the Chi-Square test
+chi_test_gender_wvo <- chisq.test(gender_wvo_table, simulate.p.value = TRUE)
+print(chi_test_gender_wvo)
+
+fisher_gender_wvo <- fisher.test(gender_wvo_table)
+print(fisher_gender_wvo)
+```
+
+
+```{r Fisher's Exact test for Age vs WVO typology}
+# Create a frequency table of Gender vs. WVO_Typology
+age_wvo_table <- table(MBiol_data$Age_Bracket, MBiol_data$WVO_Typology)
+age_wvo_table
+
+
+fisher_age_wvo <- fisher.test(age_wvo_table)
+print(fisher_age_wvo)
+```
+
+
+```{r Fishers Exact test for WVO and Active Risk Mitigation}
+# Create a contingency table
+wvo_optimism_table <- table(MBiol_data$WVO_Typology, MBiol_data$Optimist_Vs_Pessimist)
+
+# View the table (optional)
+print(wvo_optimism_table)
+
+# Perform the Fishers test
+
+fishers_test_result_wvo_optimism_table <-fisher.test(wvo_optimism_table)
+
+# View the results
+print(fishers_test_result_wvo_optimism_table)
+
+```
+
